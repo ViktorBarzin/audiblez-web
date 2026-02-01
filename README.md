@@ -2,6 +2,8 @@
 
 Web interface for converting EPUB files to audiobooks using [audiblez](https://github.com/santinic/audiblez).
 
+<img width="1702" height="1145" alt="image" src="https://github.com/user-attachments/assets/ba0f9090-a8e9-4550-9c9b-473058f19cbb" />
+
 ## Features
 
 - Upload EPUB files via drag & drop
