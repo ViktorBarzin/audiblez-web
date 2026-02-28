@@ -22,7 +22,6 @@ RUN npm run build
 WORKDIR /app/backend
 COPY backend/requirements.txt ./
 RUN pip install --no-cache-dir --break-system-packages -r requirements.txt
-RUN pip install --no-cache-dir --break-system-packages qwen-tts openai-whisper yt-dlp
 
 COPY backend/ ./
 

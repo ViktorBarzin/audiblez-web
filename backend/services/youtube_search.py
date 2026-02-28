@@ -9,10 +9,15 @@ import asyncio
 import json
 import logging
 import os
+import re
 from dataclasses import dataclass
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+_YOUTUBE_URL_RE = re.compile(
+    r'^https?://(www\.)?(youtube\.com/watch\?v=|youtu\.be/)[a-zA-Z0-9_-]{11}'
+)
 
 
 @dataclass
@@ -112,7 +117,11 @@ async def download_audio(
 
     Raises:
         RuntimeError: If yt-dlp exits with a non-zero code.
+        ValueError: If the URL is not a valid YouTube URL.
     """
+    if not _YOUTUBE_URL_RE.match(video_url):
+        raise ValueError("Only YouTube URLs are accepted")
+
     output_dir.mkdir(parents=True, exist_ok=True)
 
     # yt-dlp template for output filename (without extension -- yt-dlp adds it)

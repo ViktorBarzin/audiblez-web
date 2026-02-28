@@ -188,7 +188,7 @@
           </button>
           <span class="voice-name">{voice.name}</span>
           <span class="voice-flag">{getLanguageFlag(voice.language)}</span>
-          <span class="source-badge {getSourceClass(voice.source)}">{getSourceBadge(voice.source)}</span>
+          <span class="source-badge {getSourceClass(voice.source_type)}">{getSourceBadge(voice.source_type)}</span>
           <button
             class="delete-btn"
             onclick={(e) => deleteVoice(e, voice)}

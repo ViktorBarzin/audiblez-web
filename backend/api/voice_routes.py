@@ -4,6 +4,7 @@ Endpoints for managing cloned voices, YouTube audio search/download,
 recording uploads, and audio transcription.
 """
 
+import asyncio
 import logging
 import os
 import shutil
@@ -200,6 +201,8 @@ async def youtube_download(
             output_dir=temp_dir,
             max_duration_seconds=body.max_duration_seconds,
         )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except RuntimeError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
@@ -243,7 +246,7 @@ async def transcribe_audio(user: User = Depends(get_current_user)):
             detail="No audio file found. Upload a recording or download from YouTube first.",
         )
 
-    result = transcribe(audio_file)
+    result = await asyncio.to_thread(transcribe, audio_file)
 
     return TranscriptionResult(
         text=result["text"],

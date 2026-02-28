@@ -18,6 +18,7 @@
 
   // Shared audio state
   let audioFilename = $state(null);
+  let selectedVideoUrl = $state(null);
   let step = $state('input'); // 'input' | 'transcript'
 
   // Transcript editing state
@@ -98,7 +99,7 @@
       const response = await fetch('/api/youtube/download', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: result.url, title: result.title })
+        body: JSON.stringify({ video_url: result.url })
       });
 
       if (!response.ok) {
@@ -108,6 +109,7 @@
 
       const data = await response.json();
       audioFilename = data.filename;
+      selectedVideoUrl = result.url;
       await autoTranscribe(data.filename);
     } catch (e) {
       error = e.message;
@@ -162,9 +164,7 @@
 
     try {
       const response = await fetch('/api/transcribe', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ filename })
+        method: 'POST'
       });
 
       if (!response.ok) {
@@ -197,16 +197,23 @@
     error = null;
 
     try {
-      const response = await fetch('/api/cloned-voices', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
+      const sourceType = inputMode === 'search' ? 'youtube' : inputMode === 'upload' ? 'upload' : 'recording';
+      const payload = {
           name: voiceName,
           audio_filename: audioFilename,
           transcript: transcript,
           language: language,
-          model_id: selectedModel
-        })
+          model_id: selectedModel,
+          source_type: sourceType
+      };
+      if (sourceType === 'youtube' && selectedVideoUrl) {
+          payload.source_url = selectedVideoUrl;
+      }
+
+      const response = await fetch('/api/cloned-voices', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
       });
 
       if (!response.ok) {
@@ -226,6 +233,7 @@
     step = 'input';
     transcript = '';
     audioFilename = null;
+    selectedVideoUrl = null;
     error = null;
   }
 
@@ -375,7 +383,7 @@
               <label for="model">Model</label>
               <select id="model" bind:value={selectedModel}>
                 {#each models as model}
-                  <option value={model.id}>{model.name} ({model.vram})</option>
+                  <option value={model.id}>{model.name} ({model.vram_gb} GB)</option>
                 {/each}
               </select>
             </div>
