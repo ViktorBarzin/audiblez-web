@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 
 from api.routes import router
+from api.voice_routes import router as voice_router
 from api.websocket import websocket_endpoint
 from services.database import init_db
 
@@ -34,6 +35,7 @@ async def health_check():
 
 # Include API routes
 app.include_router(router)
+app.include_router(voice_router)
 
 # WebSocket endpoint
 @app.websocket("/ws/jobs/{job_id}")
