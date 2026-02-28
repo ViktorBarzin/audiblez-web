@@ -1,12 +1,23 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from pathlib import Path
 
 from api.routes import router
+from api.voice_routes import router as voice_router
 from api.websocket import websocket_endpoint
+from services.database import init_db
 
-app = FastAPI(title="Audiblez Web API", version="1.0.0")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_db()
+    yield
+
+
+app = FastAPI(title="Audiblez Web API", version="1.0.0", lifespan=lifespan)
 
 # CORS middleware for development
 app.add_middleware(
@@ -24,6 +35,7 @@ async def health_check():
 
 # Include API routes
 app.include_router(router)
+app.include_router(voice_router)
 
 # WebSocket endpoint
 @app.websocket("/ws/jobs/{job_id}")

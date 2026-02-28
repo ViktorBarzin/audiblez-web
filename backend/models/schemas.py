@@ -47,6 +47,7 @@ class Job(BaseModel):
     user_id: str  # User who owns this job
     filename: str
     voice: str
+    voice_type: str = "preset"  # "preset" (Kokoro) or "cloned" (Qwen3-TTS)
     speed: float
     use_gpu: bool
     status: JobStatus

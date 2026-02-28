@@ -30,6 +30,10 @@ COPY samples/ /app/samples/
 
 WORKDIR /app/backend
 
+ENV QWEN_TTS_MODEL=Qwen/Qwen3-TTS-12Hz-1.7B-Base
+ENV WHISPER_MODEL=small
+ENV VOICES_DB=/mnt/voices/voices.db
+
 EXPOSE 8000
 
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

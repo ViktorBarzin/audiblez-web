@@ -1,6 +1,9 @@
 <script>
+  import ClonedVoicesList from './ClonedVoicesList.svelte';
+
   let { selectedVoice = $bindable(null) } = $props();
 
+  let activeTab = $state('preset');
   let groupedVoices = $state({});
   let playingVoice = $state(null);
   let audioElement = $state(null);
@@ -87,39 +90,62 @@
 <div class="voice-picker">
   <h3>Select Voice</h3>
 
-  <div class="voice-groups">
-    {#each Object.entries(groupedVoices) as [language, languageVoices]}
-      <div class="voice-group">
-        <div class="language-header">
-          <span class="flag">{getLanguageFlag(language)}</span>
-          <span class="language-name">{language}</span>
-        </div>
-        <div class="voices-list">
-          {#each languageVoices as voice}
-            <div
-              class="voice-item"
-              class:selected={selectedVoice === voice.id}
-              onclick={() => selectVoice(voice.id)}
-            >
-              <button
-                class="play-btn"
-                class:playing={playingVoice === voice.id}
-                onclick={(e) => playVoiceSample(e, voice.id)}
-                title="Play sample"
-              >
-                {playingVoice === voice.id ? '⏹' : '▶'}
-              </button>
-              <span class="voice-name">{voice.name}</span>
-              <span class="voice-id">{voice.id}</span>
-              <span class="voice-gender" class:female={voice.gender === 'F'}>
-                {getGenderIcon(voice.gender)}
-              </span>
-            </div>
-          {/each}
-        </div>
-      </div>
-    {/each}
+  <div class="tabs">
+    <button
+      class="tab"
+      class:active={activeTab === 'preset'}
+      onclick={() => { activeTab = 'preset'; }}
+    >
+      Preset Voices
+    </button>
+    <button
+      class="tab"
+      class:active={activeTab === 'cloned'}
+      onclick={() => { activeTab = 'cloned'; }}
+    >
+      Cloned Voices
+    </button>
   </div>
+
+  {#if activeTab === 'preset'}
+    <div class="voice-groups">
+      {#each Object.entries(groupedVoices) as [language, languageVoices]}
+        <div class="voice-group">
+          <div class="language-header">
+            <span class="flag">{getLanguageFlag(language)}</span>
+            <span class="language-name">{language}</span>
+          </div>
+          <div class="voices-list">
+            {#each languageVoices as voice}
+              <div
+                class="voice-item"
+                class:selected={selectedVoice === voice.id}
+                onclick={() => selectVoice(voice.id)}
+              >
+                <button
+                  class="play-btn"
+                  class:playing={playingVoice === voice.id}
+                  onclick={(e) => playVoiceSample(e, voice.id)}
+                  title="Play sample"
+                >
+                  {playingVoice === voice.id ? '⏹' : '▶'}
+                </button>
+                <span class="voice-name">{voice.name}</span>
+                <span class="voice-id">{voice.id}</span>
+                <span class="voice-gender" class:female={voice.gender === 'F'}>
+                  {getGenderIcon(voice.gender)}
+                </span>
+              </div>
+            {/each}
+          </div>
+        </div>
+      {/each}
+    </div>
+  {:else}
+    <div class="cloned-tab-content">
+      <ClonedVoicesList bind:selectedVoice />
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -136,6 +162,45 @@
     top: 0;
     background: white;
     padding: 0.5rem 0;
+    z-index: 1;
+  }
+
+  .tabs {
+    display: flex;
+    border-bottom: 2px solid #e0e0e0;
+    margin-bottom: 0.75rem;
+    position: sticky;
+    top: 2.25rem;
+    background: white;
+    z-index: 1;
+  }
+
+  .tab {
+    flex: 1;
+    padding: 0.5rem 0.75rem;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    cursor: pointer;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #666;
+    transition: all 0.2s;
+  }
+
+  .tab:hover {
+    color: #333;
+    background: #f5f5f5;
+  }
+
+  .tab.active {
+    color: #4a90d9;
+    border-bottom-color: #4a90d9;
+  }
+
+  .cloned-tab-content {
+    padding-top: 0.25rem;
   }
 
   .voice-groups {

@@ -8,6 +8,7 @@ import re
 
 from models.schemas import Voice, JobCreate, Job, JobProgress, ChapterInfo
 from services.voices import get_all_voices, get_voices_by_language, get_voice
+from services.voice_cloner import is_cloned_voice, get_voice as get_cloned_voice
 from services.converter import job_manager
 from api.auth import User, get_current_user
 
@@ -138,22 +139,36 @@ async def create_job(job_create: JobCreate, user: User = Depends(get_current_use
     if not file_path.exists():
         raise HTTPException(status_code=404, detail="File not found")
 
-    # Verify voice exists
-    voice = get_voice(job_create.voice)
-    if not voice:
-        raise HTTPException(status_code=404, detail="Voice not found")
+    # Determine pipeline based on voice type
+    if is_cloned_voice(job_create.voice):
+        # Cloned voice -> Qwen3-TTS pipeline
+        cloned = await get_cloned_voice(job_create.voice)
+        if not cloned:
+            raise HTTPException(status_code=404, detail="Cloned voice not found")
 
-    # Create job with user ownership
-    job = job_manager.create_job(
-        user_id=user.uid,
-        filename=job_create.filename,
-        voice=job_create.voice,
-        speed=job_create.speed,
-        use_gpu=job_create.use_gpu
-    )
+        job = job_manager.create_job(
+            user_id=user.uid,
+            filename=job_create.filename,
+            voice=job_create.voice,
+            speed=job_create.speed,
+            use_gpu=job_create.use_gpu,
+            voice_type="cloned",
+        )
+        asyncio.create_task(job_manager.run_qwen_conversion(job.id))
+    else:
+        # Preset voice -> Kokoro/audiblez CLI pipeline
+        voice = get_voice(job_create.voice)
+        if not voice:
+            raise HTTPException(status_code=404, detail="Voice not found")
 
-    # Start conversion in background
-    asyncio.create_task(job_manager.run_conversion(job.id))
+        job = job_manager.create_job(
+            user_id=user.uid,
+            filename=job_create.filename,
+            voice=job_create.voice,
+            speed=job_create.speed,
+            use_gpu=job_create.use_gpu,
+        )
+        asyncio.create_task(job_manager.run_conversion(job.id))
 
     return job
 
