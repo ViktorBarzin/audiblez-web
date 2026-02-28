@@ -5,8 +5,14 @@ from pathlib import Path
 
 from api.routes import router
 from api.websocket import websocket_endpoint
+from services.database import init_db
 
 app = FastAPI(title="Audiblez Web API", version="1.0.0")
+
+
+@app.on_event("startup")
+async def startup_event():
+    init_db()
 
 # CORS middleware for development
 app.add_middleware(
