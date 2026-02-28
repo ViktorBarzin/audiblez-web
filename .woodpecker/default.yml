@@ -15,10 +15,9 @@ steps:
     settings:
       repo: viktorbarzin/audiblez-web
       dockerfile: Dockerfile
-      username:
-        from_secret: docker_username
+      username: viktorbarzin
       password:
-        from_secret: docker_password
+        from_secret: dockerhub-pat
       tags:
         - latest
         - "${CI_PIPELINE_NUMBER}"
