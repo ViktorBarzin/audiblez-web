@@ -13,7 +13,6 @@ from pathlib import Path
 
 from models.voice_schemas import ClonedVoice
 from services.database import execute_read, execute_write
-from services.qwen_tts import create_clone_prompt, iso_to_language
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +64,9 @@ async def create_voice(
     4. Insert a row into the ``voices`` table.
     5. Return the newly created :class:`ClonedVoice`.
     """
+    # Lazy import: qwen_tts pulls in GPU-only packages (numpy, torch, etc.)
+    from services.qwen_tts import create_clone_prompt, iso_to_language
+
     voice_id = str(uuid.uuid4())
     vdir = _voice_dir(voice_id)
 

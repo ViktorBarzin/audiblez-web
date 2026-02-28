@@ -12,8 +12,6 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
-from pydub import AudioSegment
-
 logger = logging.getLogger(__name__)
 
 
@@ -152,7 +150,9 @@ async def download_audio(
     downloaded_path = wav_files[0]
     logger.info("Downloaded audio to %s", downloaded_path)
 
-    # Trim to max_duration_seconds using pydub
+    # Trim to max_duration_seconds using pydub (lazy import -- not available outside Docker)
+    from pydub import AudioSegment
+
     audio = AudioSegment.from_wav(str(downloaded_path))
     max_ms = max_duration_seconds * 1000
 
