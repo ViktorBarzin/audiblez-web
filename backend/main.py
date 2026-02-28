@@ -1,3 +1,5 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -7,12 +9,14 @@ from api.routes import router
 from api.websocket import websocket_endpoint
 from services.database import init_db
 
-app = FastAPI(title="Audiblez Web API", version="1.0.0")
 
-
-@app.on_event("startup")
-async def startup_event():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     init_db()
+    yield
+
+
+app = FastAPI(title="Audiblez Web API", version="1.0.0", lifespan=lifespan)
 
 # CORS middleware for development
 app.add_middleware(

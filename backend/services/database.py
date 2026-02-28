@@ -2,7 +2,8 @@
 SQLite database layer for voice cloning.
 
 Uses WAL mode for concurrent reads and an asyncio lock to serialize writes.
-Each call opens a fresh synchronous sqlite3 connection for simplicity.
+All async functions use aiosqlite so they never block the event loop.
+init_db() stays synchronous (called once at startup before the loop serves requests).
 """
 
 import asyncio
@@ -10,6 +11,8 @@ import os
 import sqlite3
 from pathlib import Path
 from typing import Any
+
+import aiosqlite
 
 DB_PATH = os.environ.get("VOICES_DB", "/mnt/voices/voices.db")
 
@@ -32,46 +35,42 @@ CREATE TABLE IF NOT EXISTS voices (
 """
 
 
-def _get_connection() -> sqlite3.Connection:
-    """Create a new SQLite connection with WAL mode and row factory."""
-    Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    conn.execute("PRAGMA journal_mode=WAL")
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
 def init_db() -> None:
-    """Initialize the database: create tables if they don't exist."""
-    conn = _get_connection()
+    """Initialize the database: create tables if they don't exist.
+
+    Uses plain sqlite3 because this runs once at startup before the event
+    loop begins serving requests.
+    """
+    Path(DB_PATH).parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(DB_PATH, timeout=10)
     try:
+        conn.execute("PRAGMA journal_mode=WAL")
         conn.executescript(SCHEMA)
         conn.commit()
     finally:
         conn.close()
 
 
-def execute_read(query: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
+async def execute_read(
+    query: str, params: tuple[Any, ...] = ()
+) -> list[dict[str, Any]]:
     """Execute a read query and return results as a list of dicts."""
-    conn = _get_connection()
-    try:
-        cursor = conn.execute(query, params)
-        rows = cursor.fetchall()
-        return [dict(row) for row in rows]
-    finally:
-        conn.close()
+    async with aiosqlite.connect(DB_PATH, timeout=10) as conn:
+        await conn.execute("PRAGMA journal_mode=WAL")
+        conn.row_factory = aiosqlite.Row
+        async with conn.execute(query, params) as cursor:
+            rows = await cursor.fetchall()
+            return [dict(row) for row in rows]
 
 
 async def execute_write(query: str, params: tuple[Any, ...] = ()) -> int:
     """Execute a write query under the async lock. Returns rowcount."""
     async with _write_lock:
-        conn = _get_connection()
-        try:
-            cursor = conn.execute(query, params)
-            conn.commit()
+        async with aiosqlite.connect(DB_PATH, timeout=10) as conn:
+            await conn.execute("PRAGMA journal_mode=WAL")
+            cursor = await conn.execute(query, params)
+            await conn.commit()
             return cursor.rowcount
-        finally:
-            conn.close()
 
 
 async def execute_write_returning(
@@ -79,11 +78,10 @@ async def execute_write_returning(
 ) -> list[dict[str, Any]]:
     """Execute a write query that returns rows (INSERT ... RETURNING, etc.)."""
     async with _write_lock:
-        conn = _get_connection()
-        try:
-            cursor = conn.execute(query, params)
-            rows = cursor.fetchall()
-            conn.commit()
+        async with aiosqlite.connect(DB_PATH, timeout=10) as conn:
+            await conn.execute("PRAGMA journal_mode=WAL")
+            conn.row_factory = aiosqlite.Row
+            async with conn.execute(query, params) as cursor:
+                rows = await cursor.fetchall()
+            await conn.commit()
             return [dict(row) for row in rows]
-        finally:
-            conn.close()
