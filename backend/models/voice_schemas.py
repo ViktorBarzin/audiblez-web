@@ -7,6 +7,8 @@ from typing import Optional
 class ClonedVoice(BaseModel):
     """A cloned voice stored in the database."""
 
+    model_config = {"protected_namespaces": ()}
+
     id: str
     name: str
     created_by: str
@@ -22,6 +24,8 @@ class ClonedVoice(BaseModel):
 
 class ClonedVoiceCreate(BaseModel):
     """Request body for creating a new cloned voice."""
+
+    model_config = {"protected_namespaces": ()}
 
     name: str = Field(min_length=1, max_length=100)
     language: str = Field(min_length=2, max_length=5)
