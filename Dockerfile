@@ -22,6 +22,7 @@ RUN npm run build
 WORKDIR /app/backend
 COPY backend/requirements.txt ./
 RUN pip install --no-cache-dir --break-system-packages -r requirements.txt
+RUN pip install --no-cache-dir --break-system-packages qwen-tts openai-whisper yt-dlp
 
 COPY backend/ ./
 
@@ -29,6 +30,10 @@ COPY backend/ ./
 COPY samples/ /app/samples/
 
 WORKDIR /app/backend
+
+ENV QWEN_TTS_MODEL=Qwen/Qwen3-TTS-12Hz-1.7B-Base
+ENV WHISPER_MODEL=small
+ENV VOICES_DB=/mnt/voices/voices.db
 
 EXPOSE 8000
 
