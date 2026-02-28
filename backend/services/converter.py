@@ -1,19 +1,58 @@
 import asyncio
 import uuid
 import os
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Callable, Optional
 import subprocess
 import json
 
+import torch
+
 from models.schemas import Job, JobStatus, JobProgress, ChapterInfo
-from services.epub_parser import extract_chapters, Chapter
+from services.epub_parser import extract_chapters, is_chapter, Chapter
 from services.chapter_embedder import (
     get_chapter_audio_durations,
     generate_ffmpeg_metadata,
     embed_chapters_in_m4b
 )
+from services.voice_cloner import is_cloned_voice, get_clone_prompt_bytes, get_voice as get_cloned_voice
+from services.qwen_tts import generate_chapter_audio, iso_to_language
+
+
+def _assemble_m4b(wav_files: list[Path], output_path: Path) -> None:
+    """Concatenate WAV files into a single M4B using FFmpeg.
+
+    Creates a temporary concat list file, runs FFmpeg to encode as AAC
+    in an M4B container, then cleans up the list file.
+    """
+    list_file = output_path.parent / "concat_list.txt"
+    try:
+        with open(list_file, "w") as f:
+            for wav in wav_files:
+                # FFmpeg concat demuxer expects single-quoted paths
+                escaped = str(wav).replace("'", "'\\''")
+                f.write(f"file '{escaped}'\n")
+
+        cmd = [
+            "ffmpeg", "-y",
+            "-f", "concat",
+            "-safe", "0",
+            "-i", str(list_file),
+            "-c:a", "aac",
+            "-b:a", "64k",
+            "-movflags", "+faststart",
+            str(output_path),
+        ]
+        print(f"Assembling M4B: {' '.join(cmd)}")
+        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
+        if result.returncode != 0:
+            raise RuntimeError(f"FFmpeg concat failed: {result.stderr}")
+        print(f"M4B assembled: {output_path} ({output_path.stat().st_size} bytes)")
+    finally:
+        if list_file.exists():
+            list_file.unlink()
 
 
 class JobManager:
@@ -36,7 +75,7 @@ class JobManager:
         user_dir.mkdir(parents=True, exist_ok=True)
         return user_dir
 
-    def create_job(self, user_id: str, filename: str, voice: str, speed: float, use_gpu: bool) -> Job:
+    def create_job(self, user_id: str, filename: str, voice: str, speed: float, use_gpu: bool, voice_type: str = "preset") -> Job:
         """Create a new conversion job for a user."""
         job_id = str(uuid.uuid4())
         now = datetime.now()
@@ -46,6 +85,7 @@ class JobManager:
             user_id=user_id,
             filename=filename,
             voice=voice,
+            voice_type=voice_type,
             speed=speed,
             use_gpu=use_gpu,
             status=JobStatus.PENDING,
@@ -245,6 +285,157 @@ class JobManager:
 
         except Exception as e:
             print(f"Conversion error: {e}")
+            self.update_job_status(job_id, JobStatus.FAILED, str(e))
+
+    async def run_qwen_conversion(self, job_id: str):
+        """Run the Qwen3-TTS voice-clone conversion in the background.
+
+        Uses a cloned voice to synthesise each chapter of an EPUB, assembles
+        the per-chapter WAVs into an M4B, and embeds chapter metadata.
+        """
+        job = self.jobs.get(job_id)
+        if not job:
+            return
+
+        try:
+            self.update_job_status(job_id, JobStatus.PROCESSING)
+
+            # Prepare user-specific paths
+            input_path = self.get_user_uploads_dir(job.user_id) / job.filename
+            output_dir = self.get_user_outputs_dir(job.user_id) / job_id
+            output_dir.mkdir(parents=True, exist_ok=True)
+
+            # Extract chapter metadata from EPUB
+            chapters: list[Chapter] = extract_chapters(input_path)
+            self.jobs[job_id].total_chapters = len(chapters)
+            print(f"Qwen conversion: {len(chapters)} chapters from EPUB")
+
+            # Load clone prompt from NFS
+            clone_prompt = get_clone_prompt_bytes(job.voice)
+            if clone_prompt is None:
+                self.update_job_status(
+                    job_id, JobStatus.FAILED,
+                    f"Clone prompt not found for voice {job.voice}"
+                )
+                return
+
+            # Get voice metadata (language, model_id)
+            voice_meta = await get_cloned_voice(job.voice)
+            if voice_meta is None:
+                self.update_job_status(
+                    job_id, JobStatus.FAILED,
+                    f"Voice metadata not found for {job.voice}"
+                )
+                return
+
+            language = iso_to_language(voice_meta.language)
+            model_id = voice_meta.model_id
+
+            # Re-read EPUB to extract full text for each chapter
+            from ebooklib import epub as epublib, ITEM_DOCUMENT
+            from bs4 import BeautifulSoup
+
+            book = epublib.read_epub(str(input_path))
+            chapter_texts: list[str] = []
+            for item in book.get_items():
+                if item.get_type() != ITEM_DOCUMENT:
+                    continue
+                content = item.get_content()
+                soup = BeautifulSoup(content, features="lxml")
+                text_parts = []
+                for tag in soup.find_all(["title", "p", "h1", "h2", "h3", "h4", "li"]):
+                    t = tag.get_text(strip=True)
+                    if t:
+                        text_parts.append(t)
+                full_text = " ".join(text_parts)
+                filename = item.get_name() or ""
+                if is_chapter(full_text, filename):
+                    chapter_texts.append(full_text)
+
+            if len(chapter_texts) != len(chapters):
+                print(
+                    f"Warning: chapter text count ({len(chapter_texts)}) != "
+                    f"chapter metadata count ({len(chapters)})"
+                )
+
+            num_chapters = min(len(chapters), len(chapter_texts))
+            wav_files: list[Path] = []
+
+            for i in range(num_chapters):
+                chapter = chapters[i]
+                chapter_text = chapter_texts[i]
+
+                wav_path = output_dir / f"chapter_{i + 1:04d}.wav"
+                print(f"Generating chapter {i + 1}/{num_chapters}: {chapter.title}")
+
+                self.update_job_progress(
+                    job_id,
+                    progress=round((i / num_chapters) * 95, 1),
+                    current_chapter=chapter.title,
+                )
+
+                try:
+                    await asyncio.to_thread(
+                        generate_chapter_audio,
+                        chapter_text=chapter_text,
+                        clone_prompt_bytes=clone_prompt,
+                        output_path=wav_path,
+                        language=language,
+                        model_id=model_id,
+                        speed=job.speed,
+                    )
+                except torch.cuda.OutOfMemoryError:
+                    self.update_job_status(
+                        job_id,
+                        JobStatus.FAILED,
+                        "CUDA out of memory. Try using the smaller 0.6B model "
+                        "(Qwen/Qwen3-TTS-12Hz-0.6B-Base) or reduce chapter length.",
+                    )
+                    return
+
+                wav_files.append(wav_path)
+
+            if not wav_files:
+                self.update_job_status(
+                    job_id, JobStatus.FAILED, "No chapter audio was generated"
+                )
+                return
+
+            # Assemble all chapter WAVs into M4B
+            stem = input_path.stem
+            m4b_path = output_dir / f"{stem}.m4b"
+            self.update_job_progress(job_id, 96.0, current_chapter="Assembling M4B...")
+
+            await asyncio.to_thread(_assemble_m4b, wav_files, m4b_path)
+
+            # Embed chapter metadata
+            self.update_job_progress(job_id, 98.0, current_chapter="Embedding chapters...")
+            try:
+                durations = get_chapter_audio_durations(output_dir)
+                if durations:
+                    n = min(len(chapters), len(durations))
+                    metadata = generate_ffmpeg_metadata(chapters[:n], durations[:n])
+                    embed_chapters_in_m4b(m4b_path, metadata)
+
+                    self.jobs[job_id].chapters = [
+                        ChapterInfo(
+                            title=c.title,
+                            start_ms=c.start_ms,
+                            end_ms=c.end_ms,
+                        )
+                        for c in chapters[:n]
+                    ]
+                    print(f"Embedded {n} chapters in M4B")
+            except Exception as e:
+                print(f"Failed to embed chapters (non-fatal): {e}")
+
+            # Mark completed
+            self.jobs[job_id].output_file = m4b_path.name
+            self.update_job_status(job_id, JobStatus.COMPLETED)
+            self.update_job_progress(job_id, 100.0)
+
+        except Exception as e:
+            print(f"Qwen conversion error: {e}")
             self.update_job_status(job_id, JobStatus.FAILED, str(e))
 
     def delete_job(self, job_id: str, user_id: str) -> bool:
