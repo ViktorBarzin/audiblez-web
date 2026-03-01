@@ -1,0 +1,32 @@
+when:
+  - event: push
+    branch: main
+    path:
+      include:
+        - "Dockerfile.base"
+        - "backend/requirements.txt"
+        - "frontend/package.json"
+        - "frontend/package-lock.json"
+
+clone:
+  git:
+    image: woodpeckerci/plugin-git
+    settings:
+      attempts: 5
+      backoff: 10s
+
+steps:
+  - name: build-base-image
+    image: woodpeckerci/plugin-docker-buildx
+    privileged: true
+    settings:
+      repo: viktorbarzin/audiblez-web-base
+      dockerfile: Dockerfile.base
+      username: viktorbarzin
+      password:
+        from_secret: dockerhub-pat
+      tags:
+        - latest
+      mirror: http://10.0.20.10:5000
+      cache_from: "viktorbarzin/audiblez-web-base:latest"
+      cache_to: "type=inline"

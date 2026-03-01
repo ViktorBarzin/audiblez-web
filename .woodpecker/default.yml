@@ -11,7 +11,8 @@ clone:
 
 steps:
   - name: build-and-push
-    image: plugins/docker
+    image: woodpeckerci/plugin-docker-buildx
+    privileged: true
     settings:
       repo: viktorbarzin/audiblez-web
       dockerfile: Dockerfile
@@ -21,6 +22,9 @@ steps:
       tags:
         - latest
         - "${CI_PIPELINE_NUMBER}"
+      mirror: http://10.0.20.10:5000
+      cache_from: "viktorbarzin/audiblez-web:latest"
+      cache_to: "type=inline"
 
   - name: deploy
     image: docker.io/library/alpine
