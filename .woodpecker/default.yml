@@ -12,7 +12,6 @@ clone:
 steps:
   - name: build-and-push
     image: woodpeckerci/plugin-docker-buildx
-    privileged: true
     settings:
       repo: viktorbarzin/audiblez-web
       dockerfile: Dockerfile
