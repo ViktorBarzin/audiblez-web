@@ -1,12 +1,5 @@
 when:
-  - event: push
-    branch: main
-    path:
-      include:
-        - "Dockerfile.base"
-        - "backend/requirements.txt"
-        - "frontend/package.json"
-        - "frontend/package-lock.json"
+  - event: manual
 
 clone:
   git:
