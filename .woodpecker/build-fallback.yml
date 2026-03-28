@@ -99,7 +99,7 @@ steps:
         exit 1
 
   - name: slack
-    image: woodpeckerci/plugin-slack
+    image: plugins/slack
     depends_on:
       - verify-deploy
     settings:
